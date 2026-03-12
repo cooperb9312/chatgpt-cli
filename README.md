@@ -6,6 +6,12 @@
 
 `pplx` is a macOS CLI and MCP server that controls the **Perplexity Desktop App** via Accessibility automation, turning your existing Pro subscription into a programmable search backend for Claude, OpenCode, and any other MCP client. A direct Sonar REST API backend is also included as a fallback.
 
+
+
+https://github.com/user-attachments/assets/b4b4fc53-a6bd-4778-8f25-2946c61f7860
+
+
+
 ---
 
 ## Quick Start
