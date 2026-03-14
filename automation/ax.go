@@ -249,6 +249,15 @@ func HasPopover(bundleID string) bool {
 	return C.ax_has_popover(cBundleID) == 1
 }
 
+// RestoreWindows un-minimizes all minimized windows of the specified app.
+// Minimized windows report AXSubrole=AXDialog and are skipped by WaitForWindow.
+// Call this before WaitForWindow if the app may have been minimized.
+func RestoreWindows(bundleID string) {
+	cBundleID := C.CString(bundleID)
+	defer C.free(unsafe.Pointer(cBundleID))
+	C.ax_restore_windows(cBundleID)
+}
+
 // PressEscape 向前台 App 发送 Escape 键，用于关闭 popover / 弹出层
 func PressEscape() {
 	C.ax_press_escape()

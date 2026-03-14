@@ -1100,6 +1100,46 @@ int ax_has_popover(const char *bundle_id) {
     return found;
 }
 
+// Un-minimize all minimized windows of the app.
+// When a window is minimized, its AXSubrole becomes AXDialog which get_first_window skips.
+// Setting kAXMinimizedAttribute to false restores it to AXStandardWindow.
+void ax_restore_windows(const char *bundle_id) {
+    pid_t pid = get_pid_for_bundle(bundle_id);
+    if (pid < 0) return;
+
+    AXUIElementRef app = AXUIElementCreateApplication(pid);
+    if (!app) return;
+
+    CFTypeRef windowsVal = NULL;
+    AXError err = AXUIElementCopyAttributeValue(app, kAXWindowsAttribute, &windowsVal);
+    CFRelease(app);
+
+    if (err != kAXErrorSuccess || !windowsVal) {
+        if (windowsVal) CFRelease(windowsVal);
+        return;
+    }
+    if (CFGetTypeID(windowsVal) != CFArrayGetTypeID()) {
+        CFRelease(windowsVal);
+        return;
+    }
+
+    CFArrayRef windows = (CFArrayRef)windowsVal;
+    CFIndex count = CFArrayGetCount(windows);
+    for (CFIndex i = 0; i < count; i++) {
+        AXUIElementRef win = (AXUIElementRef)CFArrayGetValueAtIndex(windows, i);
+        CFTypeRef minimized = NULL;
+        if (AXUIElementCopyAttributeValue(win, kAXMinimizedAttribute, &minimized) == kAXErrorSuccess) {
+            if (minimized && CFGetTypeID(minimized) == CFBooleanGetTypeID() &&
+                CFBooleanGetValue((CFBooleanRef)minimized)) {
+                fprintf(stderr, "[restore_windows] un-minimizing window %ld\n", (long)i);
+                AXUIElementSetAttributeValue(win, kAXMinimizedAttribute, kCFBooleanFalse);
+            }
+            if (minimized) CFRelease(minimized);
+        }
+    }
+    CFRelease(windowsVal);
+}
+
 // 向前台 App 发送 Escape 键，用于关闭 popover / 弹出层。
 // kVK_Escape = 53
 void ax_press_escape(void) {
@@ -1190,7 +1230,7 @@ char* ax_read_response_text(const char *bundle_id) {
             AXUIElementCopyAttributeValue(elem, kAXDescriptionAttribute, (CFTypeRef *)&desc);
             if (desc) {
                 NSString *s = (__bridge_transfer NSString *)desc;
-                if (s.length > 20) {
+                if (s.length > 3) {
                     [texts addObject:s];
                 }
             }
@@ -1203,7 +1243,10 @@ char* ax_read_response_text(const char *bundle_id) {
         AXUIElementCopyAttributeValue(elem, kAXChildrenAttribute, (CFTypeRef *)&children);
         if (children) {
             CFIndex count = CFArrayGetCount(children);
-            for (CFIndex i = 0; i < count; i++) {
+            // Push children in REVERSE order so LIFO pop yields forward (document) order.
+            // Without this, LIFO gives reverse-pre-order: last child visited first,
+            // causing code blocks and response paragraphs to appear in wrong sequence.
+            for (CFIndex i = count - 1; i >= 0; i--) {
                 AXUIElementRef child = (AXUIElementRef)CFArrayGetValueAtIndex(children, i);
                 [stack addObject:(__bridge id)child];
             }

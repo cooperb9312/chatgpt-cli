@@ -68,11 +68,17 @@ func EnsureAppRunning() error {
 	return nil
 }
 
-// ensureWindow activates app and waits for its AXWindow to appear.
+// ensureWindow activates app, un-minimizes any minimized windows, and waits for AXWindow.
+// Minimized windows report AXSubrole=AXDialog and are invisible to WaitForWindow.
 func ensureWindow() error {
 	if err := EnsureAppRunning(); err != nil {
 		return err
 	}
+	// Un-minimize any minimized windows before WaitForWindow.
+	// A minimized window has AXSubrole=AXDialog which get_first_window skips,
+	// causing WaitForWindow to time out after 10s.
+	automation.RestoreWindows(BundleID)
+	time.Sleep(300 * time.Millisecond) // allow window un-minimize animation to complete
 	if err := automation.WaitForWindow(BundleID, windowTimeout, windowPoll); err != nil {
 		return fmt.Errorf("ChatGPT window not available: %w (is a display connected?)", err)
 	}
@@ -180,9 +186,34 @@ func Ask(query string) (*SearchResult, error) {
 		return nil, fmt.Errorf("ask timed out: %w", err)
 	}
 
-	text, err := automation.ReadResponseText(BundleID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response: %w", err)
+	// Handle A/B test UI ("你更偏向于哪个回复？"):
+	// OpenAI occasionally presents two side-by-side responses with 回复1 / 回复2 buttons.
+	// If we read without selecting, both responses get concatenated into the output.
+	// Auto-select 回复1 and wait for it to render as a normal response.
+	if automation.HasButton(BundleID, "回复1") {
+		fmt.Fprintf(os.Stderr, "[ask] A/B test UI detected — auto-selecting 回复1\n")
+		if btn, err := automation.FindButton(BundleID, "回复1"); err == nil {
+			_ = automation.Click(btn)
+			btn.Release()
+			time.Sleep(800 * time.Millisecond) // wait for selection to apply and re-render
+		}
+	}
+
+	// Retry ReadResponseText up to 5 times with 600ms delays.
+	// On cold start, the AX API can temporarily return kAXErrorCannotComplete (-25204)
+	// while Electron is still doing post-generation work (saving history, loading resources).
+	var text string
+	var readErr error
+	for attempt := 0; attempt < 5; attempt++ {
+		text, readErr = automation.ReadResponseText(BundleID)
+		if readErr == nil {
+			break
+		}
+		fmt.Fprintf(os.Stderr, "[read] attempt %d failed: %v — retrying\n", attempt+1, readErr)
+		time.Sleep(600 * time.Millisecond)
+	}
+	if readErr != nil {
+		return nil, fmt.Errorf("failed to read response: %w", readErr)
 	}
 
 	answer := extractLastResponse(text, query)
@@ -231,14 +262,23 @@ func waitForGenerationComplete(bundleID string, timeout, poll time.Duration) err
 }
 
 // extractLastResponse extracts the AI's reply from the full AX text dump.
-// ax_read_response_text returns all AXStaticText blocks joined by "\n\n".
-// We attempt to isolate the content after the user's query echo.
+// ax_read_response_text returns all AXStaticText description blocks joined by "\n\n".
+// The user query echo can appear anywhere in the dump (DFS traversal order varies);
+// we strip it out regardless of position and return the remaining non-empty text.
 func extractLastResponse(fullText, query string) string {
-	if idx := strings.LastIndex(fullText, query); idx != -1 {
-		after := strings.TrimSpace(fullText[idx+len(query):])
-		if after != "" {
-			return after
-		}
+	// Remove all occurrences of the query echo from the text, then return trimmed result.
+	// This handles three cases:
+	//   1. Query echo at start → response is what follows
+	//   2. Query echo at end  → response is what precedes (DFS LIFO order)
+	//   3. Query echo in the middle (shouldn't happen, but handled gracefully)
+	cleaned := strings.ReplaceAll(fullText, query, "")
+	cleaned = strings.TrimSpace(cleaned)
+	// Collapse excessive blank lines introduced by the removal
+	for strings.Contains(cleaned, "\n\n\n") {
+		cleaned = strings.ReplaceAll(cleaned, "\n\n\n", "\n\n")
+	}
+	if cleaned != "" {
+		return cleaned
 	}
 	return strings.TrimSpace(fullText)
 }

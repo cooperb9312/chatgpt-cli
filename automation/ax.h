@@ -77,6 +77,11 @@ int ax_has_button(const char *bundle_id, const char *description);
 // Returns 1 if a popover is present, 0 otherwise.
 int ax_has_popover(const char *bundle_id);
 
+// Un-minimize all minimized windows of the app. No-op if none are minimized.
+// Minimized windows report AXSubrole=AXDialog and are invisible to get_first_window.
+// Call this before WaitForWindow when the app may have been minimized.
+void ax_restore_windows(const char *bundle_id);
+
 // Send Escape key to the foreground App (closes popovers / dismisses overlays).
 void ax_press_escape(void);
 
