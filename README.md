@@ -1,16 +1,12 @@
-# pplx
+# gpt
 
-> Drive your Perplexity Pro subscription as an MCP tool — the Desktop App does the searching, you pay nothing extra.
+> Drive your ChatGPT Desktop App as an MCP tool — your existing subscription, no extra fees.
 
 [中文文档](README.zh.md)
 
-`pplx` is a macOS CLI and MCP server that controls the **Perplexity Desktop App** via Accessibility automation, turning your existing Pro subscription into a programmable search backend for Claude, OpenCode, and any other MCP client. A direct Sonar REST API backend is also included as a fallback.
-
-
+`gpt` is a macOS CLI and MCP server that controls the **ChatGPT Desktop App** via Accessibility automation, turning your existing subscription into a programmable AI backend for Claude, OpenCode, and any other MCP client.
 
 https://github.com/user-attachments/assets/b4b4fc53-a6bd-4778-8f25-2946c61f7860
-
-
 
 ---
 
@@ -18,15 +14,15 @@ https://github.com/user-attachments/assets/b4b4fc53-a6bd-4778-8f25-2946c61f7860
 
 ```bash
 # 1. Build
-git clone https://github.com/toby1991/pplx-cli
-cd pplx-cli
-make install          # builds → /usr/local/bin/pplx
+git clone https://github.com/toby1991/chatgpt-cli
+cd chatgpt-cli
+make install          # builds → /usr/local/bin/gpt
 
 # 2. Grant Accessibility permission (one-time)
 #    System Settings → Privacy & Security → Accessibility → add your terminal app
 
 # 3. Verify it works
-pplx "what is MCP?"
+gpt "what is MCP?"
 
 # 4. Add to Claude Desktop or OpenCode (see MCP section below)
 ```
@@ -34,26 +30,23 @@ pplx "what is MCP?"
 **Headless Mac (Mac mini via SSH)?** One extra step:
 
 ```bash
-pplx setup-caffeinate   # prevents sleep + disables screen lock — run once, persists across reboots
+gpt setup-caffeinate   # prevents sleep + disables screen lock — run once, persists across reboots
 ```
 
 ---
 
 ## How It Works
 
-Two backends, one binary:
-
 | Backend | How | Cost | Speed |
 |---------|-----|------|-------|
-| **UI** (default) | Controls Perplexity Desktop App via macOS AXUIElement API | Free — uses your Pro subscription | 10–30 s |
-| **API** | Calls Perplexity Sonar REST API directly | $5/month free tier + API key | 2–5 s |
+| **UI** (default) | Controls ChatGPT Desktop App via macOS AXUIElement API | Free — uses your subscription | 10–30 s |
 
 Two operation modes:
 
 | Mode | Command | Use case |
 |------|---------|----------|
-| **CLI** | `pplx "query"` | Direct terminal use, scripts, pipes |
-| **MCP Server** | `pplx mcp` | Tool calls from Claude, OpenCode, etc. |
+| **CLI** | `gpt "query"` | Direct terminal use, scripts, pipes |
+| **MCP Server** | `gpt mcp` | Tool calls from Claude, OpenCode, etc. |
 
 ---
 
@@ -61,49 +54,43 @@ Two operation modes:
 
 ```bash
 # Basic search
-pplx "best practices for Go error handling"
+gpt "best practices for Go error handling"
 
 # Specify model (name prefix — matches the UI model switcher)
-pplx --model "Claude Sonnet" "explain monads"
+gpt --model "GPT-5.3" "explain monads"
 
-# Specify content sources
-pplx --sources web,academic "recent papers on RAG"
+# Enable web search
+gpt --web-search "latest news on AI"
 
 # Pipe in, pipe out
-echo "what is entropy?" | pplx
-pplx "top Go CLI libraries" --json | jq '.answer'
+echo "what is entropy?" | gpt
+gpt "top Go CLI libraries" --json | jq '.answer'
 
-# Quiet mode — answer only, no citations
-pplx -q "capital of France"
+# Quiet mode — answer only
+gpt -q "capital of France"
 
 # Interactive REPL
-pplx
+gpt
 ```
 
 ### Subcommands
 
 ```bash
-pplx status               # current mode/model (reads Perplexity UserDefaults)
-pplx models               # list available UI models
-pplx sources              # list content source categories
-pplx dump                 # dump AX tree (diagnostic)
-pplx version
+gpt status               # check if ChatGPT Desktop is running
+gpt models               # list available UI models
+gpt dump                 # dump AX tree (diagnostic)
+gpt version
 
 # Headless Mac management
-pplx setup-caffeinate     # install caffeinate LaunchAgent + disable screen lock
-pplx remove-caffeinate    # uninstall
-
-# API backend
-pplx api "query"          # search via REST API
-pplx api --model sonar-reasoning "explain P=NP"
-pplx api models           # list API models
+gpt setup-caffeinate     # install caffeinate LaunchAgent + disable screen lock
+gpt remove-caffeinate    # uninstall
 ```
 
 ### Output Formats
 
 **TTY** — colored output with spinner:
 ```
-⠋ Searching...
+⠋ Waiting for response...
 
 ────────────────────────────────────────────────────
 Go error handling best practices include wrapping errors...
@@ -124,7 +111,7 @@ Sources:
     {"index": 1, "title": "Effective Go", "url": "https://go.dev/doc/effective_go"}
   ],
   "mode": "search",
-  "model": "sonar_pro"
+  "model": "GPT-5.3"
 }
 ```
 
@@ -132,26 +119,21 @@ Sources:
 
 ## MCP Server
 
-`pplx mcp` exposes Perplexity as MCP tools over stdio.
+`gpt mcp` exposes ChatGPT as MCP tools over stdio.
 
 ### Tools
 
 | Tool | Description |
 |------|-------------|
-| `search` | Search Perplexity — optional `model` and `sources` override |
-| `list_models` | List available models for the active backend |
-| `list_sources` | List content source categories (UI backend only) |
+| `search` | Ask ChatGPT — optional `model` and `web_search` override |
+| `list_models` | List available models for the UI backend |
 
 ### Backend Configuration
 
 ```bash
-pplx mcp                                    # UI only (default)
-pplx mcp --primary api                      # API only
-pplx mcp --primary ui --fallback api        # UI primary, API fallback
-pplx mcp --primary ui --fallback api \
-  --primary-model "GPT-5" \
-  --fallback-model sonar-pro
-pplx mcp --sources web,academic             # default sources for UI backend
+gpt mcp                                    # UI only (default)
+gpt mcp --model "GPT-5.3"                  # specify default model
+gpt mcp --web-search                       # enable web search by default
 ```
 
 ### OpenClaw
@@ -161,14 +143,11 @@ pplx mcp --sources web,academic             # default sources for UI backend
 ```json
 {
   "mcpServers": {
-    "pplx": {
-      "command": "/usr/local/bin/pplx",
-      "args": ["mcp", "--primary", "api", "--primary-model", "sonar",
-               "--fallback", "ui", "--fallback-model", "GPT-5",
-               "--sources", "web,academic,social"],
+    "gpt": {
+      "command": "/usr/local/bin/gpt",
+      "args": ["mcp", "--model", "GPT-5.3"],
       "env": {
-        "PERPLEXITY_API_KEY": "pplx-...",
-        "PPLX_PROMPT_SUFFIX": "..."
+        "GPT_PROMPT_SUFFIX": ""
       }
     }
   }
@@ -182,13 +161,11 @@ pplx mcp --sources web,academic             # default sources for UI backend
 ```json
 {
   "mcpServers": {
-    "perplexity": {
+    "chatgpt": {
       "type": "stdio",
-      "command": "/usr/local/bin/pplx",
-      "args": ["mcp", "--primary", "ui", "--fallback", "api"],
-      "env": {
-        "PERPLEXITY_API_KEY": "pplx-..."
-      }
+      "command": "/usr/local/bin/gpt",
+      "args": ["mcp"],
+      "env": {}
     }
   }
 }
@@ -201,13 +178,11 @@ pplx mcp --sources web,academic             # default sources for UI backend
 ```json
 {
   "mcp": {
-    "perplexity": {
+    "chatgpt": {
       "type": "stdio",
-      "command": "/usr/local/bin/pplx",
-      "args": ["mcp", "--primary", "ui", "--fallback", "api", "--primary-model", "GPT-5"],
-      "env": {
-        "PERPLEXITY_API_KEY": "pplx-..."
-      }
+      "command": "/usr/local/bin/gpt",
+      "args": ["mcp", "--model", "GPT-5.3"],
+      "env": {}
     }
   }
 }
@@ -215,10 +190,10 @@ pplx mcp --sources web,academic             # default sources for UI backend
 
 ### MCP Behaviors
 
-- **Search prompt suffix**: In MCP mode, a system prompt is appended to each query, instructing Perplexity to search more deeply and return authoritative sources.
-- **Auto-launch**: If Perplexity Desktop is not running, it is started automatically.
+- **Search prompt suffix**: In MCP mode, set `GPT_PROMPT_SUFFIX` environment variable to append text to each query.
+- **Auto-launch**: If ChatGPT Desktop is not running, it is started automatically.
 - **NavigateToHome**: Before each UI search, the app returns to the home page to start a clean thread.
-- **Caffeinate check**: At startup, if using the UI backend, warns if `caffeinate` is not running and suggests `pplx setup-caffeinate`.
+- **Caffeinate check**: At startup, warns if `caffeinate` is not running and suggests `gpt setup-caffeinate`.
 
 ---
 
@@ -228,7 +203,7 @@ Running on a Mac mini without a display (SSH / remote)?
 
 ```bash
 # One command handles both sleep prevention and screen lock:
-pplx setup-caffeinate
+gpt setup-caffeinate
 ```
 
 This does two things:
@@ -254,13 +229,13 @@ Two System Settings tweaks prevent the display from sleeping or locking while un
 
 ### Virtual Display
 
-Perplexity requires at least one display (physical or virtual). Options:
+ChatGPT Desktop requires at least one display (physical or virtual). Options:
 
 1. **Apple Remote Management** *(try this first)* — Enabling Remote Management in System Settings → Sharing automatically exposes a virtual framebuffer on Apple Silicon Mac mini. No extra hardware needed.
 2. **HDMI Dummy Plug** — Plug a cheap HDMI dummy plug into the Mac mini's HDMI port. macOS sees it as a real display. Most reliable option if Remote Management doesn't work.
 3. **BetterDisplay** — [BetterDisplay](https://github.com/waydabber/BetterDisplay) can create a software virtual display without any hardware. Useful when no physical HDMI port is available (e.g., Mac mini with only USB-C).
 
-- **Accessibility permission**: Grant to the process running `pplx` in System Settings → Privacy & Security → Accessibility.
+- **Accessibility permission**: Grant to the process running `gpt` in System Settings → Privacy & Security → Accessibility.
 
 ---
 
@@ -269,15 +244,14 @@ Perplexity requires at least one display (physical or virtual). Options:
 ```
 ┌─────────────────────────────────────────────────┐
 │                    cmd/                          │
-│  root.go  mcp.go  api.go  caffeinate.go  ...    │
+│  root.go  mcp.go  caffeinate.go  ...            │
 │            Cobra CLI + MCP Server                │
 └───────────────────┬─────────────────────────────┘
                     │
           ┌─────────┴──────────┐
           │      driver/        │
-          │  search.go          │  ← Dispatcher (primary/fallback)
-          │  perplexity.go      │  ← UI backend (AX automation)
-          │  api.go             │  ← API backend (Sonar REST)
+          │  search.go          │  ← Dispatcher
+          │  chatgpt.go         │  ← UI backend (AX automation)
           └─────────┬───────────┘
                     │
           ┌─────────┴───────────┐
@@ -289,28 +263,18 @@ Perplexity requires at least one display (physical or virtual). Options:
           └──────────────────────┘
 ```
 
-### Search Flow — UI Backend
+### Ask Flow — UI Backend
 
 ```
 NavigateToHome()       → click chevron-left if on results page
 SetModel(model)        → open model popover, select by prefix
-SetSources(sources)    → open sources popover, toggle checkboxes
-Search(query)
-  → open perplexity-app://search?q=...   URL scheme triggers search
-  → waitForButtonWithScroll("copy")      poll for generation complete
-      → HasButton("checkbox")            generating = true while present
-      → GetContentLength()               track answer growth
-      → ScrollToBottom()                 handle virtualized viewport
-  → Click(copyBtn) + ReadClipboard()     extract answer
-  → parseClipboardContent()              parse answer + citations
-```
-
-### Search Flow — API Backend
-
-```
-APISearch(apiKey, model, query)
-  → POST https://api.perplexity.ai/chat/completions
-  → parse response + citations
+SetWebSearch(enable)   → toggle web search switch
+SetTextAreaValue()     → type the query
+Click("发送")          → submit the query
+WaitForStopButton()    → wait for 停止生成 to appear
+WaitForStopGone()      → wait for 停止生成 to disappear (generation done)
+ReadResponseText()     → read response via AX API
+extractLastResponse()  → parse response text
 ```
 
 ---
@@ -318,7 +282,7 @@ APISearch(apiKey, model, query)
 ## Project Structure
 
 ```
-pplx-cli/
+chatgpt-cli/
 ├── main.go
 ├── go.mod / go.sum
 ├── Makefile
@@ -326,17 +290,14 @@ pplx-cli/
 ├── cmd/
 │   ├── root.go          # root command, flags, search dispatch
 │   ├── mcp.go           # MCP server subcommand
-│   ├── api.go           # API search subcommand
 │   ├── caffeinate.go    # setup-caffeinate / remove-caffeinate
-│   ├── status.go
-│   ├── models.go
-│   ├── sources.go
+│   ├── status.go        # check ChatGPT Desktop status
+│   ├── models.go        # list available models
 │   ├── dump.go          # AX tree dump (diagnostic)
 │   └── version.go
 ├── driver/
-│   ├── perplexity.go    # UI backend: Search, SetModel, SetSources, NavigateToHome
-│   ├── search.go        # Dispatcher: primary/fallback routing
-│   └── api.go           # API backend: Sonar REST client
+│   ├── chatgpt.go       # UI backend: Ask, SetModel, SetWebSearch, NavigateToHome
+│   └── search.go        # Dispatcher
 ├── automation/
 │   ├── ax.go            # Go/CGo bindings
 │   ├── ax.h             # C header
@@ -352,9 +313,8 @@ pplx-cli/
 
 - macOS (Apple Silicon or Intel)
 - Go 1.23+
-- Perplexity Desktop App (for UI backend)
+- ChatGPT Desktop App (for UI backend)
 - Accessibility permission granted to terminal / calling process (for UI backend)
-- `PERPLEXITY_API_KEY` environment variable (for API backend, optional)
 
 ---
 
@@ -363,8 +323,7 @@ pplx-cli/
 | Limitation | Detail |
 |------------|--------|
 | macOS only | Uses AXUIElement API — no cross-platform support |
-| Serial execution | One UI search at a time (Perplexity App constraint) |
-| Clipboard briefly overwritten | UI backend uses clipboard to read results; original content is restored after |
+| Serial execution | One UI search at a time (ChatGPT App constraint) |
 | Display required | UI backend needs at least one display (physical or virtual) |
 | Accessibility permission required | Grant in System Settings → Privacy & Security → Accessibility |
 
