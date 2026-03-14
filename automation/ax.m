@@ -1208,19 +1208,44 @@ char* ax_read_response_text(const char *bundle_id) {
     AXUIElementRef win = get_first_window(bundle_id);
     if (!win) return NULL;
 
-    // Collect (text, y_position) pairs. We sort by Y after traversal to get
-    // correct visual (top-to-bottom) order. DFS traversal order does NOT match
-    // visual order in Electron/Chromium AX trees — the tree structure is nested
-    // by component (code block containers, paragraph containers, etc.) in an
-    // order that doesn't directly correspond to screen position. Sorting by
-    // kAXPositionAttribute Y value gives reliable document order.
-    NSMutableArray *items = [NSMutableArray array]; // @{@"text": NSString, @"y": NSNumber}
-    NSMutableArray *stack = [NSMutableArray arrayWithObject:(__bridge id)win];
+    // Strategy: FIFO DFS (reverse-push into LIFO stack so child[0] is processed
+    // before child[n-1]) to collect AXStaticText nodes in AX-children index order.
+    //
+    // Code-block detection:
+    //   In the ChatGPT macOS app each code block is represented as an AXHeading
+    //   (desc = "python 代码块" or similar) immediately followed by a sibling
+    //   AXScrollArea that contains the code text.  We detect this pattern by
+    //   scanning each parent's children list: if a child is an AXHeading whose
+    //   description contains "代码块", the next sibling AXScrollArea is marked as
+    //   a code container (childIsCode = YES), and its AXStaticText descendants
+    //   inherit that flag.
+    //
+    // Ordering bug fix:
+    //   When a response begins with a text paragraph followed by code blocks,
+    //   the first text paragraph ends up as the LAST AX child of the response
+    //   container.  After FIFO DFS it is therefore the last item in our list.
+    //   We detect this (last item isCode=NO, second-to-last isCode=YES) and
+    //   move the last item to just before the first code item.
+    //
+    // User-message filtering:
+    //   ChatGPT stores the user's original Markdown prompt in the first AXStaticText
+    //   node of the conversation.  These texts contain literal "\n" escape sequences
+    //   (as two characters: backslash + 'n').  We skip any node containing this
+    //   pattern, since AI response paragraphs are rendered plain text without it.
+
+    // items: @{@"text": NSString, @"isCode": NSNumber(BOOL)}
+    NSMutableArray *items = [NSMutableArray array];
+
+    // Stack entries: @[(__bridge id)element, @(insideCodeBlock)]
+    NSMutableArray *stack = [NSMutableArray arrayWithObject:@[(__bridge id)win, @NO]];
 
     while (stack.count > 0) {
-        // CFRetain before removeLastObject to prevent ARC from releasing CF object
-        AXUIElementRef elem = (AXUIElementRef)CFRetain((__bridge CFTypeRef)[stack lastObject]);
+        NSArray *entry = (NSArray *)[stack lastObject];
         [stack removeLastObject];
+
+        // CFRetain before using — ARC may release the id wrapper
+        AXUIElementRef elem = (AXUIElementRef)CFRetain((__bridge CFTypeRef)entry[0]);
+        BOOL insideCode = [entry[1] boolValue];
 
         CFStringRef role = NULL;
         AXUIElementCopyAttributeValue(elem, kAXRoleAttribute, (CFTypeRef *)&role);
@@ -1231,23 +1256,16 @@ char* ax_read_response_text(const char *bundle_id) {
         }
 
         if (isStaticText) {
-            // ChatGPT (Electron) stores text in kAXDescriptionAttribute
             CFStringRef desc = NULL;
             AXUIElementCopyAttributeValue(elem, kAXDescriptionAttribute, (CFTypeRef *)&desc);
             if (desc) {
                 NSString *s = (__bridge_transfer NSString *)desc;
                 if (s.length > 3) {
-                    // Read Y screen coordinate for position-based sorting
-                    CGFloat yPos = 0;
-                    CFTypeRef posVal = NULL;
-                    if (AXUIElementCopyAttributeValue(elem, kAXPositionAttribute, &posVal) == kAXErrorSuccess && posVal) {
-                        CGPoint pt = CGPointZero;
-                        if (AXValueGetValue((AXValueRef)posVal, kAXValueCGPointType, &pt)) {
-                            yPos = pt.y;
-                        }
-                        CFRelease(posVal);
+                    // Skip user-message nodes: they contain literal "\n" (backslash+n)
+                    // as escape sequences from the original Markdown source.
+                    if ([s rangeOfString:@"\\n"].location == NSNotFound) {
+                        [items addObject:@{@"text": s, @"isCode": @(insideCode)}];
                     }
-                    [items addObject:@{@"text": s, @"y": @(yPos)}];
                 }
             }
             // Don't recurse into AXStaticText children
@@ -1259,9 +1277,47 @@ char* ax_read_response_text(const char *bundle_id) {
         AXUIElementCopyAttributeValue(elem, kAXChildrenAttribute, (CFTypeRef *)&children);
         if (children) {
             CFIndex count = CFArrayGetCount(children);
+            // Scan children forward to detect code-block pairs:
+            //   AXHeading(desc contains "代码块") → next sibling AXScrollArea is code container
+            // Build per-child insideCode flags, then push in reverse for FIFO DFS order.
+            NSMutableArray<NSNumber *> *childCodes = [NSMutableArray arrayWithCapacity:(NSUInteger)count];
+            BOOL prevWasCodeHeading = NO;
             for (CFIndex i = 0; i < count; i++) {
                 AXUIElementRef child = (AXUIElementRef)CFArrayGetValueAtIndex(children, i);
-                [stack addObject:(__bridge id)child];
+                BOOL thisChildIsCode = insideCode;
+                if (prevWasCodeHeading) {
+                    CFStringRef childRole = NULL;
+                    AXUIElementCopyAttributeValue(child, kAXRoleAttribute, (CFTypeRef *)&childRole);
+                    if (childRole) {
+                        if (CFStringCompare(childRole, kAXScrollAreaRole, 0) == kCFCompareEqualTo) {
+                            thisChildIsCode = YES;
+                        }
+                        CFRelease(childRole);
+                    }
+                }
+                [childCodes addObject:@(thisChildIsCode)];
+
+                // Check if this child is an AXHeading with "代码块" in its description
+                prevWasCodeHeading = NO;
+                CFStringRef childRole2 = NULL;
+                AXUIElementCopyAttributeValue(child, kAXRoleAttribute, (CFTypeRef *)&childRole2);
+                if (childRole2) {
+                    if (CFStringCompare(childRole2, kAXHeadingRole, 0) == kCFCompareEqualTo) {
+                        CFStringRef childDesc = NULL;
+                        AXUIElementCopyAttributeValue(child, kAXDescriptionAttribute, (CFTypeRef *)&childDesc);
+                        if (childDesc) {
+                            NSString *ds = (__bridge_transfer NSString *)childDesc;
+                            prevWasCodeHeading = ([ds rangeOfString:@"代码块"].location != NSNotFound);
+                        }
+                    }
+                    CFRelease(childRole2);
+                }
+            }
+            // Push in reverse so child[0] is on top → processed first (FIFO)
+            for (CFIndex i = count - 1; i >= 0; i--) {
+                AXUIElementRef child = (AXUIElementRef)CFArrayGetValueAtIndex(children, i);
+                BOOL cc = [childCodes[(NSUInteger)i] boolValue];
+                [stack addObject:@[(__bridge id)child, @(cc)]];
             }
             CFRelease(children);
         }
@@ -1272,15 +1328,26 @@ char* ax_read_response_text(const char *bundle_id) {
 
     if (items.count == 0) return NULL;
 
-    // Sort by Y coordinate DESCENDING = top-to-bottom visual order.
-    // macOS Quartz screen coordinates: Y=0 is at the BOTTOM of the primary screen,
-    // Y increases upward. So elements near the TOP of the window have LARGER Y values.
-    // Descending sort → larger Y first = top of screen first = correct reading order.
-    NSSortDescriptor *byY = [NSSortDescriptor sortDescriptorWithKey:@"y" ascending:NO];
-    NSArray *sorted = [items sortedArrayUsingDescriptors:@[byY]];
+    // Fix displaced first paragraph (see comment at top of function).
+    NSMutableArray *ordered = [NSMutableArray arrayWithArray:items];
+    if (items.count > 1) {
+        BOOL lastIsText     = ![items.lastObject[@"isCode"] boolValue];
+        BOOL prevLastIsCode = [items[items.count - 2][@"isCode"] boolValue];
+        if (lastIsText && prevLastIsCode) {
+            NSUInteger firstCodeIdx = NSNotFound;
+            for (NSUInteger k = 0; k < items.count - 1; k++) {
+                if ([items[k][@"isCode"] boolValue]) { firstCodeIdx = k; break; }
+            }
+            if (firstCodeIdx != NSNotFound) {
+                NSDictionary *displaced = items.lastObject;
+                [ordered removeLastObject];
+                [ordered insertObject:displaced atIndex:firstCodeIdx];
+            }
+        }
+    }
 
     NSMutableArray<NSString *> *texts = [NSMutableArray array];
-    for (NSDictionary *item in sorted) {
+    for (NSDictionary *item in ordered) {
         [texts addObject:item[@"text"]];
     }
 
