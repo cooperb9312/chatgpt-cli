@@ -1208,7 +1208,13 @@ char* ax_read_response_text(const char *bundle_id) {
     AXUIElementRef win = get_first_window(bundle_id);
     if (!win) return NULL;
 
-    NSMutableArray<NSString *> *texts = [NSMutableArray array];
+    // Collect (text, y_position) pairs. We sort by Y after traversal to get
+    // correct visual (top-to-bottom) order. DFS traversal order does NOT match
+    // visual order in Electron/Chromium AX trees — the tree structure is nested
+    // by component (code block containers, paragraph containers, etc.) in an
+    // order that doesn't directly correspond to screen position. Sorting by
+    // kAXPositionAttribute Y value gives reliable document order.
+    NSMutableArray *items = [NSMutableArray array]; // @{@"text": NSString, @"y": NSNumber}
     NSMutableArray *stack = [NSMutableArray arrayWithObject:(__bridge id)win];
 
     while (stack.count > 0) {
@@ -1231,7 +1237,17 @@ char* ax_read_response_text(const char *bundle_id) {
             if (desc) {
                 NSString *s = (__bridge_transfer NSString *)desc;
                 if (s.length > 3) {
-                    [texts addObject:s];
+                    // Read Y screen coordinate for position-based sorting
+                    CGFloat yPos = 0;
+                    CFTypeRef posVal = NULL;
+                    if (AXUIElementCopyAttributeValue(elem, kAXPositionAttribute, &posVal) == kAXErrorSuccess && posVal) {
+                        CGPoint pt = CGPointZero;
+                        if (AXValueGetValue((AXValueRef)posVal, kAXValueCGPointType, &pt)) {
+                            yPos = pt.y;
+                        }
+                        CFRelease(posVal);
+                    }
+                    [items addObject:@{@"text": s, @"y": @(yPos)}];
                 }
             }
             // Don't recurse into AXStaticText children
@@ -1243,10 +1259,7 @@ char* ax_read_response_text(const char *bundle_id) {
         AXUIElementCopyAttributeValue(elem, kAXChildrenAttribute, (CFTypeRef *)&children);
         if (children) {
             CFIndex count = CFArrayGetCount(children);
-            // Push children in REVERSE order so LIFO pop yields forward (document) order.
-            // Without this, LIFO gives reverse-pre-order: last child visited first,
-            // causing code blocks and response paragraphs to appear in wrong sequence.
-            for (CFIndex i = count - 1; i >= 0; i--) {
+            for (CFIndex i = 0; i < count; i++) {
                 AXUIElementRef child = (AXUIElementRef)CFArrayGetValueAtIndex(children, i);
                 [stack addObject:(__bridge id)child];
             }
@@ -1257,7 +1270,19 @@ char* ax_read_response_text(const char *bundle_id) {
 
     CFRelease(win);
 
-    if (texts.count == 0) return NULL;
+    if (items.count == 0) return NULL;
+
+    // Sort by Y coordinate DESCENDING = top-to-bottom visual order.
+    // macOS Quartz screen coordinates: Y=0 is at the BOTTOM of the primary screen,
+    // Y increases upward. So elements near the TOP of the window have LARGER Y values.
+    // Descending sort → larger Y first = top of screen first = correct reading order.
+    NSSortDescriptor *byY = [NSSortDescriptor sortDescriptorWithKey:@"y" ascending:NO];
+    NSArray *sorted = [items sortedArrayUsingDescriptors:@[byY]];
+
+    NSMutableArray<NSString *> *texts = [NSMutableArray array];
+    for (NSDictionary *item in sorted) {
+        [texts addObject:item[@"text"]];
+    }
 
     NSString *joined = [texts componentsJoinedByString:@"\n\n"];
     return strdup([joined UTF8String]);
