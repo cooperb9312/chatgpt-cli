@@ -6,7 +6,7 @@
 
 `gpt` 是一个 macOS CLI 工具兼 MCP 服务，通过 Accessibility 自动化直接驱动 **ChatGPT Desktop App**，将你现有的订阅变成 Claude、OpenCode 等任意 MCP 客户端可调用的 AI 后端。
 
-https://github.com/user-attachments/assets/b4b4fc53-a6bd-4778-8f25-2946c61f7860
+[https://github.com/user-attachments/assets/b4b4fc53-a6bd-4778-8f25-2946c61f7860](https://github.com/user-attachments/assets/bb1dcae3-e110-49c0-844e-bc4808a3ba78)
 
 ---
 
