@@ -6,7 +6,7 @@
 
 `gpt` is a macOS CLI and MCP server that controls the **ChatGPT Desktop App** via Accessibility automation, turning your existing subscription into a programmable AI backend for Claude, OpenCode, and any other MCP client.
 
-https://github.com/user-attachments/assets/b4b4fc53-a6bd-4778-8f25-2946c61f7860
+https://github.com/user-attachments/assets/bb1dcae3-e110-49c0-844e-bc4808a3ba78
 
 ---
 
