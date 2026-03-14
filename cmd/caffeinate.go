@@ -11,13 +11,13 @@ import (
 )
 
 const (
-	caffeinateLabel = "com.pplx.caffeinate"
+	caffeinateLabel = "com.gpt.caffeinate"
 	caffeinatePlist = `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.pplx.caffeinate</string>
+    <string>com.gpt.caffeinate</string>
     <key>ProgramArguments</key>
     <array>
         <string>/usr/bin/caffeinate</string>
@@ -84,9 +84,9 @@ var setupCaffeinateCmd = &cobra.Command{
   1. 安装 LaunchAgent，登录时自动启动 caffeinate -dimsu（等效于防止系统/显示器/磁盘睡眠）
   2. 关闭屏幕锁定（sysadminctl -screenLock off，需要输入登录密码）
 
-使用 pplx remove-caffeinate 卸载（仅卸载 LaunchAgent，不恢复锁屏设置）。
+使用 gpt remove-caffeinate 卸载（仅卸载 LaunchAgent，不恢复锁屏设置）。
 
-plist 路径: ~/Library/LaunchAgents/com.pplx.caffeinate.plist`,
+plist 路径: ~/Library/LaunchAgents/com.gpt.caffeinate.plist`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		plistPath := caffeinatePlistPath()
 
@@ -128,7 +128,7 @@ plist 路径: ~/Library/LaunchAgents/com.pplx.caffeinate.plist`,
 var removeCaffeinateCmd = &cobra.Command{
 	Use:   "remove-caffeinate",
 	Short: "卸载 caffeinate LaunchAgent",
-	Long: `停止并卸载由 pplx setup-caffeinate 安装的 LaunchAgent。
+	Long: `停止并卸载由 gpt setup-caffeinate 安装的 LaunchAgent。
 注意：不会恢复屏幕锁定设置。如需重新启用，请手动执行：
   sysadminctl -screenLock immediate -password -`,
 	RunE: func(cmd *cobra.Command, args []string) error {

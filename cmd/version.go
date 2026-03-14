@@ -12,7 +12,7 @@ var versionCmd = &cobra.Command{
 	Use:   "version",
 	Short: "显示版本信息",
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Printf("pplx version %s\n", Version)
-		fmt.Println("github.com/toby1991/pplx-cli")
+		fmt.Printf("gpt version %s\n", Version)
+		fmt.Println("github.com/toby1991/chatgpt-cli")
 	},
 }

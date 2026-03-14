@@ -4,19 +4,19 @@ import (
 	"fmt"
 
 	"github.com/spf13/cobra"
-	"github.com/toby1991/pplx-cli/driver"
-	"github.com/toby1991/pplx-cli/output"
+	"github.com/toby1991/chatgpt-cli/driver"
+	"github.com/toby1991/chatgpt-cli/output"
 )
 
 var statusCmd = &cobra.Command{
 	Use:   "status",
-	Short: "显示当前 Perplexity 搜索模式和模型",
+	Short: "显示 ChatGPT Desktop App 运行状态",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		mode, model, err := driver.GetStatus()
+		status, model, err := driver.GetStatus()
 		if err != nil {
 			return fmt.Errorf("failed to read status: %w", err)
 		}
-		output.PrintStatus(mode, model)
+		output.PrintStatus(status, model)
 		return nil
 	},
 }

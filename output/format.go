@@ -10,7 +10,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/mattn/go-isatty"
-	"github.com/toby1991/pplx-cli/driver"
+	"github.com/toby1991/chatgpt-cli/driver"
 )
 
 // IsTerminal 标记当前 stdout 是否为终端（非 pipe）
@@ -200,7 +200,7 @@ func PrintStatus(mode, model string) {
 // Prompt 输出交互式 REPL 提示符
 func Prompt() string {
 	if IsTerminal {
-		return stylePrompt.Render("pplx> ")
+		return stylePrompt.Render("gpt> ")
 	}
-	return "pplx> "
+	return "gpt> "
 }
