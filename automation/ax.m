@@ -1111,3 +1111,112 @@ void ax_press_escape(void) {
     CFRelease(keyUp);
 }
 
+int ax_set_textarea_value(const char *bundle_id, const char *text) {
+    // Use get_first_window() — same robust window-selection logic used by all other functions
+    AXUIElementRef win = get_first_window(bundle_id);
+    if (!win) return -1;
+
+    // DFS to find first AXTextArea.
+    // IMPORTANT: When we pop an element from the NSMutableArray via __bridge (non-owning),
+    // ARC will release the ObjC wrapper when it leaves the array. To keep the found element
+    // alive after we stop iterating we must CFRetain it explicitly.
+    AXUIElementRef found = NULL;
+    NSMutableArray *stack = [NSMutableArray arrayWithObject:(__bridge id)win];
+
+    while (stack.count > 0 && !found) {
+        // Retain before removing from array — prevents ARC from releasing the CF object
+        AXUIElementRef elem = (AXUIElementRef)CFRetain((__bridge CFTypeRef)[stack lastObject]);
+        [stack removeLastObject];
+
+        CFStringRef role = NULL;
+        AXUIElementCopyAttributeValue(elem, kAXRoleAttribute, (CFTypeRef *)&role);
+        if (role) {
+            if (CFStringCompare(role, kAXTextAreaRole, 0) == kCFCompareEqualTo) {
+                found = elem;  // Transfer ownership — don't CFRelease elem here
+                CFRelease(role);
+                break;
+            }
+            CFRelease(role);
+        }
+
+        CFArrayRef children = NULL;
+        AXUIElementCopyAttributeValue(elem, kAXChildrenAttribute, (CFTypeRef *)&children);
+        if (children) {
+            CFIndex count = CFArrayGetCount(children);
+            for (CFIndex i = 0; i < count; i++) {
+                AXUIElementRef child = (AXUIElementRef)CFArrayGetValueAtIndex(children, i);
+                [stack addObject:(__bridge id)child];
+            }
+            CFRelease(children);
+        }
+        CFRelease(elem);  // Release the retain we took above (we didn't assign to found)
+    }
+
+    CFRelease(win);
+
+    if (!found) return -1;
+
+    NSString *nsText = [NSString stringWithUTF8String:text];
+    AXError err = AXUIElementSetAttributeValue(found, kAXValueAttribute, (__bridge CFTypeRef)nsText);
+    CFRelease(found);
+
+    return (err == kAXErrorSuccess) ? 0 : -1;
+}
+
+char* ax_read_response_text(const char *bundle_id) {
+    // Use get_first_window() for consistent, robust window selection
+    AXUIElementRef win = get_first_window(bundle_id);
+    if (!win) return NULL;
+
+    NSMutableArray<NSString *> *texts = [NSMutableArray array];
+    NSMutableArray *stack = [NSMutableArray arrayWithObject:(__bridge id)win];
+
+    while (stack.count > 0) {
+        // CFRetain before removeLastObject to prevent ARC from releasing CF object
+        AXUIElementRef elem = (AXUIElementRef)CFRetain((__bridge CFTypeRef)[stack lastObject]);
+        [stack removeLastObject];
+
+        CFStringRef role = NULL;
+        AXUIElementCopyAttributeValue(elem, kAXRoleAttribute, (CFTypeRef *)&role);
+        BOOL isStaticText = NO;
+        if (role) {
+            isStaticText = (CFStringCompare(role, kAXStaticTextRole, 0) == kCFCompareEqualTo);
+            CFRelease(role);
+        }
+
+        if (isStaticText) {
+            // ChatGPT (Electron) stores text in kAXDescriptionAttribute
+            CFStringRef desc = NULL;
+            AXUIElementCopyAttributeValue(elem, kAXDescriptionAttribute, (CFTypeRef *)&desc);
+            if (desc) {
+                NSString *s = (__bridge_transfer NSString *)desc;
+                if (s.length > 20) {
+                    [texts addObject:s];
+                }
+            }
+            // Don't recurse into AXStaticText children
+            CFRelease(elem);
+            continue;
+        }
+
+        CFArrayRef children = NULL;
+        AXUIElementCopyAttributeValue(elem, kAXChildrenAttribute, (CFTypeRef *)&children);
+        if (children) {
+            CFIndex count = CFArrayGetCount(children);
+            for (CFIndex i = 0; i < count; i++) {
+                AXUIElementRef child = (AXUIElementRef)CFArrayGetValueAtIndex(children, i);
+                [stack addObject:(__bridge id)child];
+            }
+            CFRelease(children);
+        }
+        CFRelease(elem);
+    }
+
+    CFRelease(win);
+
+    if (texts.count == 0) return NULL;
+
+    NSString *joined = [texts componentsJoinedByString:@"\n\n"];
+    return strdup([joined UTF8String]);
+}
+

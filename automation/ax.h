@@ -80,4 +80,14 @@ int ax_has_popover(const char *bundle_id);
 // Send Escape key to the foreground App (closes popovers / dismisses overlays).
 void ax_press_escape(void);
 
+// Set the value of the first AXTextArea in the app window.
+// Returns 0 on success, -1 on failure.
+int ax_set_textarea_value(const char *bundle_id, const char *text);
+
+// Read all AI response text from AXStaticText elements via kAXDescriptionAttribute.
+// ChatGPT Desktop (Electron) stores response text in description, not value.
+// Texts with length > 20 chars are collected and returned joined by "\n\n".
+// Returns malloc'd C string (caller must free), NULL if nothing found.
+char* ax_read_response_text(const char *bundle_id);
+
 #endif // AX_H

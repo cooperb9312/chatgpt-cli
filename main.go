@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/toby1991/pplx-cli/cmd"
+	"github.com/toby1991/chatgpt-cli/cmd"
 )
 
 func main() {

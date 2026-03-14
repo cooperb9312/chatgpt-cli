@@ -1,4 +1,4 @@
-module github.com/toby1991/pplx-cli
+module github.com/toby1991/chatgpt-cli
 
 go 1.23.0
 

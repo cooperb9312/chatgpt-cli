@@ -253,3 +253,30 @@ func HasPopover(bundleID string) bool {
 func PressEscape() {
 	C.ax_press_escape()
 }
+
+// SetTextAreaValue sets the text content of the first AXTextArea in the App window.
+// Works for Electron-based apps (like ChatGPT Desktop) that expose their input via AX.
+func SetTextAreaValue(bundleID, text string) error {
+	cBundleID := C.CString(bundleID)
+	defer C.free(unsafe.Pointer(cBundleID))
+	cText := C.CString(text)
+	defer C.free(unsafe.Pointer(cText))
+	if C.ax_set_textarea_value(cBundleID, cText) != 0 {
+		return fmt.Errorf("failed to set textarea value")
+	}
+	return nil
+}
+
+// ReadResponseText reads AI response text from AXStaticText elements via kAXDescriptionAttribute.
+// ChatGPT Desktop (Electron) stores response text in description, not value.
+// Returns all visible substantial text blocks joined by double newlines.
+func ReadResponseText(bundleID string) (string, error) {
+	cBundleID := C.CString(bundleID)
+	defer C.free(unsafe.Pointer(cBundleID))
+	cStr := C.ax_read_response_text(cBundleID)
+	if cStr == nil {
+		return "", fmt.Errorf("no response text found in AX tree")
+	}
+	defer C.free(unsafe.Pointer(cStr))
+	return C.GoString(cStr), nil
+}
